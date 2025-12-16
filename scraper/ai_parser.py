@@ -1,47 +1,52 @@
 import json
 import os
+import re
 from anthropic import Anthropic
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Initialize the client
-client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+# Initialize Claude
+try:
+    client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+except:
+    client = None
 
-def parse_job_with_ai(raw_text, url, company_name=""):
+def parse_job_with_ai(raw_text, url, company_name):
     """
-    Sends raw job text to Claude 3 Haiku to extract structured data.
-    NOW INCLUDES VALIDATION: Returns is_valid_job=False for junk.
+    The 'Nuclear' Parser.
+    It reads the page text and decides if it is a VALID PILOT JOB.
     """
+    if not client:
+        return {"is_valid_job": False}
 
     system_prompt = """
-    You are an expert aviation recruiter API.
-    Analyze the text from a webpage to determine if it is a SPECIFIC JOB OPENING for a Pilot.
+    You are an expert aviation recruiter.
+    Analyze the webpage text provided.
 
-    RETURN JSON ONLY.
+    YOUR GOAL:
+    1. Decide if this is a SPECIFIC JOB OPENING for a Pilot (Captain, FO, Instructor, Cadet).
+    2. If yes, extract the details into JSON.
 
-    Validation Rules:
-    - is_valid_job: boolean. Set to FALSE if this page is:
-        - A list of jobs (not a specific job)
-        - A generic "Careers" landing page
-        - A "FAQ" or "Contact Us" page
-        - A login/register page
-        - A blog post or news article
-        - A "Join our Talent Community" page
-        - A mobile game or app advertisement
+    RULES FOR 'is_valid_job':
+    - TRUE if: It is a job description for a specific pilot role (e.g. "B737 Captain", "Flight Instructor").
+    - FALSE if: It is a list of jobs, a search page, a login page, a "Register Interest" page, a blog post, a news article, or a "Life at Emirates" marketing page.
 
-    Extraction Rules (Only if is_valid_job is true):
-    - min_hours: The absolute minimum Total Flight Time required (integer). Return 0 if not found.
-    - aircraft: List of specific aircraft type ratings required (e.g. ["A320", "B737"]).
-    - visa_sponsored: boolean.
-    - job_title: The specific role (e.g. "Captain", "First Officer").
-    - is_low_hour: boolean (true if min_hours < 500).
+    EXTRACTION FIELDS (If valid):
+    - job_title: The exact role title.
+    - min_hours: The absolute minimum total flight time required (Integer). Return 0 if not specified.
+    - aircraft: List of aircraft type ratings REQUIRED (e.g. ["A320", "B737"]).
+    - type_rating_required: Boolean (True if they require you to already have the rating).
+    - visa_sponsored: Boolean (True if the text explicitly says they provide/sponsor visas).
+    - is_low_hour: Boolean (True if min_hours < 500 or text says "Cadet"/"Entry Level").
     """
 
     user_message = f"""
-    Analyze this page content for {company_name} ({url}):
+    Company: {company_name}
+    URL: {url}
 
-    {raw_text[:4000]}
+    PAGE TEXT:
+    {raw_text[:6000]}
     """
 
     try:
@@ -53,13 +58,13 @@ def parse_job_with_ai(raw_text, url, company_name=""):
             messages=[{"role": "user", "content": user_message}]
         )
 
+        # Clean response
         json_str = response.content[0].text.strip()
-        if json_str.startswith("```"):
-            json_str = json_str.split("```")[1].replace("json", "").strip()
+        if "```" in json_str:
+            json_str = json_str.split("```json")[-1].split("```")[0].strip()
 
-        data = json.loads(json_str)
-        return data
+        return json.loads(json_str)
 
     except Exception as e:
-        print(f"[X] AI Parsing Failed for {url}: {e}")
+        print(f"      [X] AI Analysis Failed: {e}")
         return {"is_valid_job": False}

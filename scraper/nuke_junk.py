@@ -1,14 +1,7 @@
 #!/usr/bin/env python3
 """
-☢️ NUKE JUNK SCRIPT
-====================
-Deletes obvious garbage from the pilot_jobs database.
-Run this to clean up mobile games, FAQs, and other non-job entries.
-
-Usage:
-    python scraper/nuke_junk.py
+Nuke Junk Script - Clean up garbage from the database
 """
-
 import os
 from supabase import create_client
 from dotenv import load_dotenv
@@ -16,39 +9,17 @@ from dotenv import load_dotenv
 load_dotenv()
 supabase = create_client(os.getenv("NEXT_PUBLIC_SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
 
-def nuke_junk():
-    print("☢️ STARTING DATABASE CLEANUP...")
+def clean_database():
+    print("[*] Cleaning database...")
 
-    # 1. Delete obvious junk by keywords
-    junk_keywords = [
-        "faq",
-        "f.a.q",
-        "mobile game",
-        "privacy policy",
-        "cookie",
-        "login",
-        "register",
-        "talent community",
-        "join our team",
-        "life at",
-        "why work",
-        "our culture",
-        "benefits",
-        "contact us"
-    ]
+    # 1. Delete anything with 'FAQ' or 'Game' in the title
+    response = supabase.table("pilot_jobs").delete().or_("title.ilike.%FAQ%,title.ilike.%Game%,title.ilike.%Login%").execute()
+    print(f"Deleted {len(response.data)} junk rows.")
 
-    count = 0
-    for word in junk_keywords:
-        response = supabase.table("pilot_jobs").delete().ilike("title", f"%{word}%").execute()
-        if response.data:
-            count += len(response.data)
-            print(f"   Deleted {len(response.data)} jobs containing '{word}'")
+    # 2. Delete jobs with 0 hours AND no aircraft type (usually generic pages)
+    # response = supabase.table("pilot_jobs").delete().eq("min_total_hours", 0).is_("aircraft", "null").execute()
 
-    # 2. Delete jobs with no hours and no aircraft (often generic pages)
-    # Be careful with this one, maybe just mark them inactive first
-    # response = supabase.table("pilot_jobs").delete().eq("min_total_hours", 0).is_("aircraft_type", "null").execute()
-
-    print(f"✅ CLEANUP COMPLETE. Removed {count} junk entries.")
+    print("[+] Database clean.")
 
 if __name__ == "__main__":
-    nuke_junk()
+    clean_database()
