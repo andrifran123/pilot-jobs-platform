@@ -17,8 +17,9 @@ async function loadJobs(): Promise<PilotJob[]> {
           .eq('is_active', true)
           .order('date_scraped', { ascending: false })
 
-        if (!error && data && data.length > 0) {
+        if (!error && data) {
           console.log(`Loaded ${data.length} jobs from Supabase`)
+          // Return Supabase data even if empty (0 jobs is valid)
           return data as PilotJob[]
         }
       }
@@ -27,7 +28,7 @@ async function loadJobs(): Promise<PilotJob[]> {
     }
   }
 
-  // Fall back to JSON file
+  // Fall back to JSON file only if Supabase failed
   return loadScrapedJobs()
 }
 

@@ -114,12 +114,13 @@ class QueueDB:
             cutoff = (now - timedelta(hours=frequency_hours)).isoformat()
 
             try:
+                # Query airlines that are due: last_checked is NULL OR last_checked < cutoff
                 response = self.client.table("airlines_to_scrape")\
                     .select("*")\
                     .eq("status", "active")\
                     .eq("tier", t)\
-                    .lt("last_checked", cutoff)\
-                    .order("last_checked")\
+                    .or_(f"last_checked.is.null,last_checked.lt.{cutoff}")\
+                    .order("last_checked", nullsfirst=True)\
                     .limit(batch_size)\
                     .execute()
 
@@ -130,8 +131,8 @@ class QueueDB:
             except Exception as e:
                 logger.error(f"Error querying tier {t}: {e}")
 
-        # Sort by last_checked (oldest first) and limit
-        all_due.sort(key=lambda x: x.get("last_checked", "2000-01-01"))
+        # Sort by last_checked (oldest first, NULLs first) and limit
+        all_due.sort(key=lambda x: x.get("last_checked") or "1900-01-01")
         return all_due[:batch_size]
 
     def get_error_airlines(self, limit: int = 5) -> List[Dict]:
