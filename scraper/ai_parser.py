@@ -61,5 +61,5 @@ def parse_job_with_ai(raw_text, url, company_name=""):
         return data
 
     except Exception as e:
-        print(f"❌ AI Parsing Failed for {url}: {e}")
+        print(f"[X] AI Parsing Failed for {url}: {e}")
         return {"is_valid_job": False}

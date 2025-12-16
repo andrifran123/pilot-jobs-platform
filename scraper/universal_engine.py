@@ -558,12 +558,12 @@ class JobNormalizer:
                 # --- THE KILL SWITCH ---
                 # If AI says this isn't a job, return None immediately.
                 if not ai_data.get("is_valid_job", True):
-                    logger.warning(f"   🗑️ GARBAGE DETECTED: AI says '{job.title}' is not a valid job.")
+                    logger.warning(f"   [GARBAGE]: AI says '{job.title}' is not a valid job.")
                     return None
 
                 # If title looks suspicious (e.g., "FAQ", "Login"), double check
                 if any(x in job.title.lower() for x in ["faq", "login", "register", "game", "mobile", "policy"]):
-                    logger.warning(f"   🗑️ KEYWORD REJECT: '{job.title}'")
+                    logger.warning(f"   [KEYWORD REJECT]: '{job.title}'")
                     return None
 
                 # Proceed with data extraction
@@ -616,7 +616,7 @@ class JobNormalizer:
 
         # Final sanity check before returning
         if any(x in clean_title.lower() for x in ["game", "faq", "login", "register", "policy"]):
-            logger.warning(f"   🗑️ FINAL REJECT: '{clean_title}'")
+            logger.warning(f"   [FINAL REJECT]: '{clean_title}'")
             return None
 
         return {
