@@ -105,12 +105,11 @@ jobs:
           python main.py stats
 
   # Optional: Validate job URLs weekly to remove dead links
-  # This job is disabled for now - uncomment the schedule below to enable
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Only run when explicitly enabled via a separate workflow or uncomment schedule
-    if: false  # Disabled - enable by changing to: github.event.schedule == '0 2 * * 0'
+    needs: scrape  # Run after scrape job completes
+    if: success()  # Only run if scrape succeeded
 
     steps:
       - name: Checkout repository
