@@ -8,7 +8,10 @@
       "Bash(git add:*)",
       "Bash(dir:*)",
       "Bash(git commit -m \"$(cat <<''EOF''\nInitial commit: Pilot Jobs Platform with Universal Scraper\n\nFeatures:\n- Next.js frontend with job listings and filtering\n- Universal ATS scraper (auto-detects Workday, Taleo, SuccessFactors, etc.)\n- AI-powered job parsing using Claude Haiku\n- Smart queue with tier-based scheduling\n- Supabase PostgreSQL backend\n- GitHub Actions for automated scraping (every 3 hours)\n- 64 pre-seeded airlines across 3 tiers\n\nComponents:\n- /src - Next.js frontend application\n- /scraper - Python scraping system\n- /.github/workflows - CI/CD and scheduled scraping\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
-      "Bash(git config:*)"
+      "Bash(git config:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nFix GitHub Actions environment variables\n\n- Add both SUPABASE_URL and NEXT_PUBLIC_SUPABASE_URL env vars\n- Add both SUPABASE_SERVICE_KEY and SUPABASE_KEY env vars\n- Fix log directory path to use absolute path based on script location\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git push:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []
