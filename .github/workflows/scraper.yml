@@ -55,8 +55,10 @@ jobs:
 
       - name: Run Scraper
         env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           cd scraper
@@ -94,8 +96,10 @@ jobs:
 
       - name: Show Statistics
         env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           cd scraper
           python main.py stats
@@ -124,8 +128,10 @@ jobs:
 
       - name: Validate Job URLs
         env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           cd scraper
           python main.py validate --limit 200

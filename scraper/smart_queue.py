@@ -58,19 +58,20 @@ TIER_FREQUENCIES = {
     3: 24,  # Tier 3: Check every 24 hours
 }
 
-# Logging setup
+# Logging setup - determine log directory based on where script is run from
+script_dir = os.path.dirname(os.path.abspath(__file__))
+log_dir = os.path.join(script_dir, 'logs')
+os.makedirs(log_dir, exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler('scraper/logs/smart_queue.log', mode='a')
+        logging.FileHandler(os.path.join(log_dir, 'smart_queue.log'), mode='a')
     ]
 )
 logger = logging.getLogger(__name__)
-
-# Ensure log directory exists
-os.makedirs('scraper/logs', exist_ok=True)
 
 # Graceful shutdown handling
 shutdown_requested = False
