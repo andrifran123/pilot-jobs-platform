@@ -339,7 +339,11 @@ class SmartQueue:
         for job in jobs:
             try:
                 normalized = self.normalizer.normalize(job, airline_region)
-                normalized_jobs.append(normalized)
+
+                # --- THE FIX: Only append if not None (garbage filtered out) ---
+                if normalized:
+                    normalized_jobs.append(normalized)
+
             except Exception as e:
                 logger.debug(f"Normalization error: {e}")
 
