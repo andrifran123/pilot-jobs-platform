@@ -1,0 +1,131 @@
+# Automated Pilot Jobs Scraper
+# Runs every 3 hours to fetch new pilot jobs from airline career pages
+# Uses GitHub Actions free tier (2000 minutes/month for private repos, unlimited for public)
+
+name: Pilot Jobs Scraper
+
+on:
+  # Run on schedule (UTC timezone)
+  schedule:
+    # Every 3 hours: 0:00, 3:00, 6:00, 9:00, 12:00, 15:00, 18:00, 21:00 UTC
+    - cron: '0 */3 * * *'
+
+  # Allow manual trigger from GitHub UI
+  workflow_dispatch:
+    inputs:
+      airline:
+        description: 'Specific airline to scrape (leave empty for all)'
+        required: false
+        default: ''
+      mode:
+        description: 'Scrape mode'
+        required: true
+        default: 'basic'
+        type: choice
+        options:
+          - basic
+          - deep
+      tier:
+        description: 'Tier to scrape (1=major, 2=medium, 3=regional, empty=all due)'
+        required: false
+        default: ''
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30  # Prevent runaway jobs
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd scraper
+          pip install -r requirements.txt
+          pip install anthropic  # For AI parsing
+          playwright install chromium
+          playwright install-deps chromium
+
+      - name: Run Scraper
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          cd scraper
+
+          # Determine scrape mode
+          MODE="${{ github.event.inputs.mode || 'basic' }}"
+          AIRLINE="${{ github.event.inputs.airline }}"
+          TIER="${{ github.event.inputs.tier }}"
+
+          echo "=== Pilot Jobs Scraper ==="
+          echo "Mode: $MODE"
+          echo "Airline: ${AIRLINE:-all}"
+          echo "Tier: ${TIER:-all due}"
+          echo "=========================="
+
+          if [ "$MODE" = "deep" ]; then
+            # AI-powered deep scrape
+            if [ -n "$AIRLINE" ]; then
+              python main.py deep --airline "$AIRLINE" --limit 10
+            else
+              # Deep scrape Tier 1 airlines only (to save API costs)
+              python main.py deep --limit 5
+            fi
+          else
+            # Basic scrape
+            if [ -n "$AIRLINE" ]; then
+              python main.py scrape --airline "$AIRLINE"
+            elif [ -n "$TIER" ]; then
+              python main.py queue --once --tier "$TIER"
+            else
+              # Default: run queue once for all due airlines
+              python main.py queue --once --batch-size 10
+            fi
+          fi
+
+      - name: Show Statistics
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd scraper
+          python main.py stats
+
+  # Optional: Validate job URLs weekly to remove dead links
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Only run on Sundays at 2:00 UTC
+    if: github.event.schedule == '0 2 * * 0' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd scraper
+          pip install -r requirements.txt
+
+      - name: Validate Job URLs
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd scraper
+          python main.py validate --limit 200

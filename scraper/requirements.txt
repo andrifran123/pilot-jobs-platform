@@ -1,0 +1,30 @@
+# Core scraping
+playwright>=1.40.0
+playwright-stealth>=1.0.6
+aiohttp>=3.9.0
+httpx>=0.25.0
+
+# Parsing
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+selectolax>=0.3.0
+
+# Data handling
+pandas>=2.0.0
+python-dateutil>=2.8.0
+
+# Database
+supabase>=2.0.0
+
+# Utilities
+fake-useragent>=1.4.0
+python-dotenv>=1.0.0
+schedule>=1.2.0
+tenacity>=8.2.0
+rich>=13.0.0
+
+# For normalization
+rapidfuzz>=3.5.0
+
+# For Universal Scraper System
+requests>=2.31.0
