@@ -542,32 +542,43 @@ class JobNormalizer:
     }
 
     @classmethod
-    def normalize(cls, job: ScrapedJob, airline_region: str = None) -> Dict[str, Any]:
+    def normalize(cls, job: ScrapedJob, airline_region: str = None) -> Optional[Dict[str, Any]]:
         """
-        Normalize a scraped job to database format.
-        ALWAYS uses AI parsing first (Claude Haiku) for accurate extraction.
-        Falls back to regex only if AI is unavailable.
+        Normalize a scraped job. Returns None if the job is invalid (junk).
         """
 
         # Build raw text for AI parsing
         raw_text = f"{job.title}\n\n{job.description or ''}"
 
-        # === AI PARSING (PRIMARY METHOD) ===
+        # === AI PARSING (THE FILTER) ===
         if AI_AVAILABLE and parse_job_with_ai:
             try:
-                logger.debug(f"🧠 AI parsing: {job.title[:50]}...")
                 ai_data = parse_job_with_ai(raw_text, job.application_url, job.company)
 
-                # Use AI-extracted data
+                # --- THE KILL SWITCH ---
+                # If AI says this isn't a job, return None immediately.
+                if not ai_data.get("is_valid_job", True):
+                    logger.warning(f"   🗑️ GARBAGE DETECTED: AI says '{job.title}' is not a valid job.")
+                    return None
+
+                # If title looks suspicious (e.g., "FAQ", "Login"), double check
+                if any(x in job.title.lower() for x in ["faq", "login", "register", "game", "mobile", "policy"]):
+                    logger.warning(f"   🗑️ KEYWORD REJECT: '{job.title}'")
+                    return None
+
+                # Proceed with data extraction
                 position_type = ai_data.get("position_type", "other")
                 aircraft = ", ".join(ai_data.get("aircraft", [])) if ai_data.get("aircraft") else None
-                min_hours = ai_data.get("min_hours")
-                min_pic_hours = ai_data.get("min_pic_hours")
-                type_rating_required = ai_data.get("type_rating_required", False)
-                type_rating_provided = ai_data.get("type_rating_provided", False)
+                min_hours = ai_data.get("min_hours", 0) or None  # Convert 0 to None
+                min_pic_hours = None
+                type_rating_required = len(ai_data.get("aircraft", [])) > 0
+                type_rating_provided = False
                 visa_sponsorship = ai_data.get("visa_sponsored", False)
-                is_entry_level = ai_data.get("is_entry_level", False)
-                contract_type = ai_data.get("contract_type", "permanent")
+                is_entry_level = ai_data.get("is_low_hour", False)
+                contract_type = "permanent"
+
+                # Update the job title with cleaner AI version if available
+                clean_title = ai_data.get("job_title", job.title) or job.title
 
                 # Use AI location if provided, else fall back to scraped location
                 location = ai_data.get("location") or job.location or "Not specified"
@@ -575,44 +586,41 @@ class JobNormalizer:
                 # Region detection (AI doesn't provide this, use our logic)
                 region = cls._detect_region(location, airline_region)
 
-                logger.debug(f"   AI extracted: {min_hours}hrs, {aircraft}, visa={visa_sponsorship}")
-
             except Exception as e:
-                logger.warning(f"AI parsing failed, falling back to regex: {e}")
+                logger.warning(f"AI parsing error: {e}")
                 # Fall through to regex parsing
-                AI_AVAILABLE_FOR_THIS_JOB = False
+                clean_title = job.title
+                position_type = cls._detect_position_type(job.title)
+                aircraft = cls._detect_aircraft(job.title, job.description or "")
+                region = cls._detect_region(job.location, airline_region)
+                type_rating_required, type_rating_provided = cls._detect_type_rating(job.title, job.description or "")
+                min_hours = cls._detect_hours(job.title, job.description or "")
+                min_pic_hours = None
+                is_entry_level = cls._detect_entry_level(job.title, position_type, type_rating_provided)
+                visa_sponsorship = region == "middle_east" or "visa" in (job.description or "").lower()
+                contract_type = "permanent"
+                location = job.location or "Not specified"
         else:
-            AI_AVAILABLE_FOR_THIS_JOB = False
-
-        # === REGEX FALLBACK (only if AI unavailable or failed) ===
-        if not AI_AVAILABLE or not parse_job_with_ai or 'position_type' not in dir():
-            # Detect position type
+            # === REGEX FALLBACK (only if AI unavailable) ===
+            clean_title = job.title
             position_type = cls._detect_position_type(job.title)
-
-            # Detect aircraft
             aircraft = cls._detect_aircraft(job.title, job.description or "")
-
-            # Detect region
             region = cls._detect_region(job.location, airline_region)
-
-            # Detect if type rating required/provided
             type_rating_required, type_rating_provided = cls._detect_type_rating(job.title, job.description or "")
-
-            # Detect hours requirements
             min_hours = cls._detect_hours(job.title, job.description or "")
             min_pic_hours = None
-
-            # Detect entry level
             is_entry_level = cls._detect_entry_level(job.title, position_type, type_rating_provided)
-
-            # Detect visa sponsorship (common for Middle East)
             visa_sponsorship = region == "middle_east" or "visa" in (job.description or "").lower()
-
             contract_type = "permanent"
             location = job.location or "Not specified"
 
+        # Final sanity check before returning
+        if any(x in clean_title.lower() for x in ["game", "faq", "login", "register", "policy"]):
+            logger.warning(f"   🗑️ FINAL REJECT: '{clean_title}'")
+            return None
+
         return {
-            "title": job.title[:500],  # Truncate if needed
+            "title": clean_title[:500],
             "company": job.company[:255],
             "location": location[:255] if location else "Not specified",
             "region": region,
@@ -621,7 +629,7 @@ class JobNormalizer:
             "type_rating_required": type_rating_required,
             "type_rating_provided": type_rating_provided,
             "min_total_hours": min_hours,
-            "min_pic_hours": min_pic_hours if 'min_pic_hours' in dir() else None,
+            "min_pic_hours": min_pic_hours,
             "license_required": "ATPL/CPL",
             "visa_sponsorship": visa_sponsorship,
             "is_entry_level": is_entry_level,
@@ -985,14 +993,21 @@ class UniversalEngine:
 
                 duration = time.time() - start_time
 
-                # Normalize jobs
+                # Normalize jobs (filter out non-jobs detected by AI)
                 normalized_jobs = []
+                filtered_count = 0
                 for job in jobs:
                     try:
                         normalized = self.normalizer.normalize(job, airline_region)
-                        normalized_jobs.append(normalized)
+                        if normalized is not None:
+                            normalized_jobs.append(normalized)
+                        else:
+                            filtered_count += 1
                     except Exception as e:
                         logger.error(f"Error normalizing job: {e}")
+
+                if filtered_count > 0:
+                    logger.info(f"   Filtered out {filtered_count} non-job pages (FAQs, login pages, etc.)")
 
                 # Deduplicate by URL
                 seen_urls = set()
