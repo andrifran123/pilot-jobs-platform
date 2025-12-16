@@ -28,6 +28,14 @@ from playwright.sync_api import sync_playwright, Page, Browser
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
+# Import AI parser - ALWAYS use AI for job parsing
+try:
+    from ai_parser import parse_job_with_ai, client as ai_client
+    AI_AVAILABLE = ai_client is not None
+except ImportError:
+    AI_AVAILABLE = False
+    parse_job_with_ai = None
+
 # Load environment variables from project root
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(project_root, '.env'))
@@ -535,43 +543,89 @@ class JobNormalizer:
 
     @classmethod
     def normalize(cls, job: ScrapedJob, airline_region: str = None) -> Dict[str, Any]:
-        """Normalize a scraped job to database format"""
+        """
+        Normalize a scraped job to database format.
+        ALWAYS uses AI parsing first (Claude Haiku) for accurate extraction.
+        Falls back to regex only if AI is unavailable.
+        """
 
-        # Detect position type
-        position_type = cls._detect_position_type(job.title)
+        # Build raw text for AI parsing
+        raw_text = f"{job.title}\n\n{job.description or ''}"
 
-        # Detect aircraft
-        aircraft = cls._detect_aircraft(job.title, job.description or "")
+        # === AI PARSING (PRIMARY METHOD) ===
+        if AI_AVAILABLE and parse_job_with_ai:
+            try:
+                logger.debug(f"🧠 AI parsing: {job.title[:50]}...")
+                ai_data = parse_job_with_ai(raw_text, job.application_url, job.company)
 
-        # Detect region
-        region = cls._detect_region(job.location, airline_region)
+                # Use AI-extracted data
+                position_type = ai_data.get("position_type", "other")
+                aircraft = ", ".join(ai_data.get("aircraft", [])) if ai_data.get("aircraft") else None
+                min_hours = ai_data.get("min_hours")
+                min_pic_hours = ai_data.get("min_pic_hours")
+                type_rating_required = ai_data.get("type_rating_required", False)
+                type_rating_provided = ai_data.get("type_rating_provided", False)
+                visa_sponsorship = ai_data.get("visa_sponsored", False)
+                is_entry_level = ai_data.get("is_entry_level", False)
+                contract_type = ai_data.get("contract_type", "permanent")
 
-        # Detect if type rating required/provided
-        type_rating_required, type_rating_provided = cls._detect_type_rating(job.title, job.description or "")
+                # Use AI location if provided, else fall back to scraped location
+                location = ai_data.get("location") or job.location or "Not specified"
 
-        # Detect hours requirements
-        min_hours = cls._detect_hours(job.title, job.description or "")
+                # Region detection (AI doesn't provide this, use our logic)
+                region = cls._detect_region(location, airline_region)
 
-        # Detect entry level
-        is_entry_level = cls._detect_entry_level(job.title, position_type, type_rating_provided)
+                logger.debug(f"   AI extracted: {min_hours}hrs, {aircraft}, visa={visa_sponsorship}")
 
-        # Detect visa sponsorship (common for Middle East)
-        visa_sponsorship = region == "middle_east" or "visa" in (job.description or "").lower()
+            except Exception as e:
+                logger.warning(f"AI parsing failed, falling back to regex: {e}")
+                # Fall through to regex parsing
+                AI_AVAILABLE_FOR_THIS_JOB = False
+        else:
+            AI_AVAILABLE_FOR_THIS_JOB = False
+
+        # === REGEX FALLBACK (only if AI unavailable or failed) ===
+        if not AI_AVAILABLE or not parse_job_with_ai or 'position_type' not in dir():
+            # Detect position type
+            position_type = cls._detect_position_type(job.title)
+
+            # Detect aircraft
+            aircraft = cls._detect_aircraft(job.title, job.description or "")
+
+            # Detect region
+            region = cls._detect_region(job.location, airline_region)
+
+            # Detect if type rating required/provided
+            type_rating_required, type_rating_provided = cls._detect_type_rating(job.title, job.description or "")
+
+            # Detect hours requirements
+            min_hours = cls._detect_hours(job.title, job.description or "")
+            min_pic_hours = None
+
+            # Detect entry level
+            is_entry_level = cls._detect_entry_level(job.title, position_type, type_rating_provided)
+
+            # Detect visa sponsorship (common for Middle East)
+            visa_sponsorship = region == "middle_east" or "visa" in (job.description or "").lower()
+
+            contract_type = "permanent"
+            location = job.location or "Not specified"
 
         return {
             "title": job.title[:500],  # Truncate if needed
             "company": job.company[:255],
-            "location": job.location[:255] if job.location else "Not specified",
+            "location": location[:255] if location else "Not specified",
             "region": region,
             "position_type": position_type,
             "aircraft_type": aircraft,
             "type_rating_required": type_rating_required,
             "type_rating_provided": type_rating_provided,
             "min_total_hours": min_hours,
+            "min_pic_hours": min_pic_hours if 'min_pic_hours' in dir() else None,
             "license_required": "ATPL/CPL",
             "visa_sponsorship": visa_sponsorship,
             "is_entry_level": is_entry_level,
-            "contract_type": "permanent",
+            "contract_type": contract_type,
             "description": job.description,
             "application_url": job.application_url,
             "source": job.source,
@@ -838,6 +892,7 @@ class UniversalEngine:
         """Run the scraper for all airlines or a single airline"""
         logger.info("=" * 60)
         logger.info("STARTING UNIVERSAL SCRAPER ENGINE")
+        logger.info(f"AI Parsing: {'ENABLED' if AI_AVAILABLE else 'DISABLED (using regex fallback)'}")
         logger.info("=" * 60)
 
         # Get airlines to scrape
